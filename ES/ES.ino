@@ -1,5 +1,5 @@
 /*
-  COMBINED: Pump + Button + Soil Moisture + Water Volume + Warn LED + OLED SH1106
+  COMBINED: Pump + Button + Soil Moisture + Water Volume + Warn LED + OLED SH1106 + Web Server
 
   Pins:
     Relay IN     -> GPIO27
@@ -7,12 +7,11 @@
     Pump LED     -> GPIO16
 
     HC-SR04:
-      VCC  -> 5V
-      GND  -> GND
-      TRIG -> GPIO5
-      ECHO -> GPIO18
-
-    Warn LED     -> GPIO17
+      VCC       -> 5V
+      GND       -> GND
+      TRIG      -> GPIO5
+      ECHO      -> GPIO18
+      Warn LED  -> GPIO17
 
     Soil sensor (Capacitive v1.2):
       VCC  -> 5V
@@ -26,6 +25,8 @@
       GND -> GND
 */
 
+#include <WiFi.h>
+#include <FirebaseESP32.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
@@ -35,6 +36,18 @@
 #include "freertos/semphr.h"
 
 SemaphoreHandle_t serialMutex = nullptr;
+
+// ===== WiFi/FireBase Define ====
+#define WIFI_SSID "minhphuong"
+#define WIFI_PASSWORD "01010000"
+
+#define FIREBASE_HOST "https://project2-cd9c9-default-rtdb.firebaseio.com/"
+#define FIREBASE_AUTH "tsnWspwpI5U5nuM1H5FfVbFJgS3ASCravKsg53y9"
+
+FirebaseData firebaseData;
+FirebaseAuth auth;
+FirebaseConfig config;
+String path = "/Var";
 
 // ===== Pump + Button (KEEP ORIGINAL LOGIC) =====
 #define RELAY_PIN   27
@@ -82,6 +95,7 @@ void waterTask(void *pvParameters);
 void warnLedTask(void *pvParameters);
 void soilTask(void *pvParameters);
 void displayTask(void *pvParameters);
+void firebaseTask(void *pvParameters);
 
 // --- Serial mutex helpers ---
 static inline void SerialLock() {
@@ -155,11 +169,35 @@ void setup() {
   Serial.println("----");
   SerialUnlock();
 
+  // ===== WiFi connect (same style as your DHT example) =====
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    SerialLock();
+    Serial.print(".");
+    SerialUnlock();
+  }
+  SerialLock();
+  Serial.println();
+  Serial.println("WiFi connected.");
+  Serial.println("----");
+  SerialUnlock();
+
+  // ===== Firebase connect (same style as your DHT example) =====
+  config.host = FIREBASE_HOST;
+  config.signer.tokens.legacy_token = FIREBASE_AUTH;
+
+  Firebase.begin(&config, &auth);
+  Firebase.reconnectWiFi(true);
+
   // --- Create tasks (same logic; run modules in parallel) ---
   xTaskCreate(waterTask,   "Water Task",    3000, NULL, 1, NULL);
   xTaskCreate(warnLedTask, "Warn LED Task", 1000, NULL, 1, NULL);
   xTaskCreate(soilTask,    "Soil Task",     2500, NULL, 1, NULL);
   xTaskCreate(displayTask, "OLED Task",     2500, NULL, 1, NULL);
+
+  // Firebase upload task (send Soid + Volume every 5s)
+  xTaskCreate(firebaseTask, "Firebase Task", 6000, NULL, 1, NULL);
 }
 
 void loop() {
@@ -239,15 +277,6 @@ void waterTask(void *pvParameters) {
     // KEEP ORIGINAL LOGIC:
     lowWater = (volume < 200);
 
-    SerialLock();
-    Serial.print("Distance (cm): ");
-    Serial.println(distanceCm, 2);
-    Serial.print("Volume (ml): ");
-    Serial.println(volume, 1);
-    Serial.print("lowWater: ");
-    Serial.println(lowWater ? "YES" : "NO");
-    SerialUnlock();
-
     vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
@@ -282,15 +311,6 @@ void soilTask(void *pvParameters) {
     int moisturePercent = map(raw, rawDry, rawWet, 0, 100);
     moisturePercent = constrain(moisturePercent, 0, 100);
     soilPercent = moisturePercent;
-
-    SerialLock();
-    Serial.print("SOIL RAW ADC = ");
-    Serial.println(raw);
-    Serial.print("Moisture = ");
-    Serial.print(moisturePercent);
-    Serial.println("%");
-    Serial.println("----");
-    SerialUnlock();
 
     vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
@@ -339,5 +359,43 @@ void displayTask(void *pvParameters) {
     display.display();
 
     vTaskDelay(500 / portTICK_PERIOD_MS); // refresh 2Hz
+  }
+}
+
+// ===== Firebase Task: upload /Var/Soid and /Var/Volume every 5s =====
+void firebaseTask(void *pvParameters) {
+  const uint32_t intervalMs = 5000;
+
+  while (1) {
+    if (Firebase.ready()) {
+      int soidValue = soilPercent;       // /Var/Soid
+      float volValue = waterVolumeMl;    // /Var/Volume
+
+      bool ok1 = Firebase.setInt(firebaseData, path + "/Soil", soidValue);
+      bool ok2 = Firebase.setFloat(firebaseData, path + "/Volume", volValue);
+
+      SerialLock();
+      Serial.println("Firebase upload:");
+      Serial.print("Soil: ");
+      Serial.println(soidValue);
+      Serial.print("Volume: ");
+      Serial.println(volValue, 1);
+
+      if (ok1 && ok2) {
+        Serial.println("Status: OK");
+      } else {
+        Serial.print("Status: FAIL - ");
+        Serial.println(firebaseData.errorReason());
+      }
+      Serial.println("----");
+      SerialUnlock();
+    } else {
+      SerialLock();
+      Serial.println("Firebase not ready");
+      Serial.println("----");
+      SerialUnlock();
+    }
+
+    vTaskDelay(intervalMs / portTICK_PERIOD_MS);
   }
 }

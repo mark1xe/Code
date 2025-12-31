@@ -1,0 +1,303 @@
+:root{
+  --bg:#0b1020;
+  --card:#121a33;
+  --text:#e8ecff;
+  --muted:#a9b3da;
+  --line:rgba(255,255,255,.12);
+  --accent:#6aa9ff;
+  --radius:18px;
+}
+
+*{ box-sizing:border-box; }
+
+body{
+  margin:0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  background: radial-gradient(1200px 800px at 15% 0%, #16214a 0%, var(--bg) 45%, #070a14 100%);
+  color:var(--text);
+  padding:16px;
+}
+
+.wrap{
+  max-width: 720px;
+  margin: 0 auto;
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+
+/* Top */
+.header{
+  border:1px solid var(--line);
+  border-radius: var(--radius);
+  padding:16px;
+  background: linear-gradient(135deg, rgba(106,169,255,.20), rgba(255,255,255,.06));
+}
+
+.title{
+  font-size:22px;
+  font-weight:800;
+  letter-spacing:.2px;
+}
+
+.subtitle{
+  margin-top:6px;
+  font-size:13px;
+  color:var(--muted);
+}
+
+/* Main card */
+.card{
+  border:1px solid var(--line);
+  border-radius: var(--radius);
+  padding:14px;
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+}
+
+.card h2{
+  margin:0 0 12px 0;
+  font-size:16px;
+  letter-spacing:.2px;
+}
+
+/* Modes list */
+.modes{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+.modeItem{
+  position: relative;              /* IMPORTANT for absolute switch */
+  display:flex;
+  gap:10px;
+  align-items:flex-start;
+  padding:12px;
+  border-radius:14px;
+  border:1px solid var(--line);
+  background:rgba(255,255,255,.03);
+}
+
+.modeItem input[type="radio"]{
+  margin-top:4px;
+  transform: scale(1.1);
+}
+
+.modeMain{
+  flex:1;
+  min-width: 0;
+}
+
+.modeTop{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+}
+
+.modeName{
+  font-weight:800;
+  font-size:15px;
+}
+
+.modeDesc{
+  font-size:13px;
+  color:var(--muted);
+  margin-top:2px;
+}
+
+/* Make room for the switch on the manual item */
+.modeManual{
+  padding-right: 88px;  /* so text doesn't sit under the switch */
+}
+
+/* Date & time: FIX overlap, add more spacing */
+.scheduleRow{
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;           /* "xa ra tí" */
+}
+
+@media (max-width: 520px){
+  .scheduleRow{
+    grid-template-columns: 1fr;   /* stack on small screens */
+    gap: 12px;
+  }
+}
+
+/* Fields */
+.field{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  min-width: 0;
+}
+
+.field label{
+  font-size:12px;
+  color:var(--muted);
+}
+
+.field input{
+  width: 100%;
+  min-width: 0;
+  background:rgba(255,255,255,.04);
+  border:1px solid var(--line);
+  color:var(--text);
+  border-radius:12px;
+  padding:10px;
+  outline:none;
+}
+
+.field input:focus{
+  border-color: rgba(106,169,255,.65);
+}
+
+/* Buttons / chips */
+.btn{
+  border:1px solid var(--line);
+  background:rgba(255,255,255,.06);
+  color:var(--text);
+  border-radius:14px;
+  padding:10px 12px;
+  font-weight:800;
+  cursor:pointer;
+}
+
+.btn:hover{
+  border-color: rgba(106,169,255,.55);
+}
+
+.btn.primary{
+  border-color: rgba(106,169,255,.55);
+  background: rgba(106,169,255,.22);
+}
+
+.chip{
+  border:1px solid var(--line);
+  background: rgba(255,255,255,.05);
+  border-radius: 999px;
+  padding:7px 10px;
+  font-size:12px;
+  color: var(--muted);
+  white-space:nowrap;
+}
+
+/* Bottom row */
+.footerRow{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:12px;
+}
+
+@media (max-width: 680px){
+  .footerRow{ grid-template-columns: 1fr; }
+}
+
+.miniCard{
+  border:1px solid var(--line);
+  border-radius: var(--radius);
+  padding:14px;
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+.miniTitle{
+  font-weight:850;
+}
+
+.hint{
+  font-size:12px;
+  color:var(--muted);
+  line-height:1.4;
+}
+
+.valueText{
+  font-size:13px;
+  color:var(--muted);
+}
+
+/* =========================
+   Switch styles (theme)
+   ========================= */
+.switch {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-block;
+  width: 60px;
+  height: 34px;
+}
+
+/* hide default checkbox */
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+/* track */
+.slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  border-radius: 34px;
+  background: rgba(255,255,255,.10);          /* OFF track */
+  border: 1px solid rgba(255,255,255,.18);
+  -webkit-transition: .25s;
+  transition: .25s;
+}
+
+/* knob */
+.slider::before {
+  position: absolute;
+  content: "";
+  height: 26px;
+  width: 26px;
+  left: 4px;
+  bottom: 4px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.92);
+  -webkit-transition: .25s;
+  transition: .25s;
+}
+
+/* OFF/ON label */
+.slider::after{
+  position: absolute;
+  content: "off";
+  right: 8px;
+  bottom: 8px;
+  font-weight: 800;
+  font-size: 12px;
+  color: rgba(232,236,255,.70);
+  -webkit-transition: .25s;
+  transition: .25s;
+}
+
+/* ON state */
+.switch input:checked + .slider {
+  background: rgba(106,169,255,.22);          /* ON track */
+  border-color: rgba(106,169,255,.55);
+  box-shadow: 0 0 0 3px rgba(106,169,255,.12);
+}
+
+.switch input:checked + .slider::after {
+  content: "on";
+  right: 36px;
+  color: rgba(232,236,255,.95);
+}
+
+.switch input:checked + .slider::before {
+  transform: translateX(26px);
+  background: var(--accent);                  /* ON knob */
+}
+
+/* focus (keyboard) */
+.switch input:focus-visible + .slider {
+  outline: 2px solid rgba(106,169,255,.75);
+  outline-offset: 3px;
+}
