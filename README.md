@@ -74,16 +74,16 @@ The web app allows selecting watering modes and adjusting parameters in real tim
 
 Base path: **`/Var`**
 
-| Key               | Type          | Description                                       |
-|-------------------|---------------|---------------------------------------------------|
-| `Soid`            | int           | Soil moisture (%) from ESP32                      |
-| `Volume`          | float / int   | Water remaining (ml)                              |
-| `Mode`            | int           | 0=MANUAL, 1=AUTO, 2=SCHEDULE                      |
-| `ManualSwitch`    | int           | 0/1 (MANUAL ON/OFF), synced with physical button  |
-| `Threshold`       | int           | Soil threshold (%) used in AUTO                   |
-| `PumpSeconds`     | int           | Pump run time (seconds) used in AUTO + SCHEDULE   |
-| `Schedule/Date`   | string        | `YYYY-MM-DD`                                      |
-| `Schedule/Time`   | string        | `HH:MM`                                           |
+| Key | Type | Description |
+|-----|------|-------------|
+| `Soid` | int | Soil moisture (%) from ESP32 |
+| `Volume` | float / int | Water remaining (ml) |
+| `Mode` | int | 0=MANUAL, 1=AUTO, 2=SCHEDULE |
+| `ManualSwitch` | int | 0/1 (MANUAL ON/OFF), synced with physical button |
+| `Threshold` | int | Soil threshold (%) used in AUTO |
+| `PumpSeconds` | int | Pump run time (seconds) used in AUTO + SCHEDULE |
+| `Schedule/Date` | string | `YYYY-MM-DD` |
+| `Schedule/Time` | string | `HH:MM` |
 
 > The ESP32 periodically uploads `Soid` and `Volume` and reads `Mode/ManualSwitch/Threshold/PumpSeconds/Schedule`.
 
@@ -121,5 +121,3 @@ Edit in code:
 ```cpp
 int rawDry = 2650;  // sensor in air (dry)
 int rawWet = 1150;  // sensor in water (wet)
-# Code
-
