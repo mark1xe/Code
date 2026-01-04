@@ -1,6 +1,5 @@
 :root{
   --bg:#0b1020;
-  --card:#121a33;
   --text:#e8ecff;
   --muted:#a9b3da;
   --line:rgba(255,255,255,.12);
@@ -26,27 +25,43 @@ body{
   gap:14px;
 }
 
-/* Top */
-.header{
+/* ===== Top 2x2 ===== */
+.topStats{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:12px;
+}
+
+@media (max-width: 520px){
+  .topStats{ grid-template-columns: 1fr; }
+}
+
+.statCard{
   border:1px solid var(--line);
   border-radius: var(--radius);
-  padding:16px;
-  background: linear-gradient(135deg, rgba(106,169,255,.20), rgba(255,255,255,.06));
+  padding:14px;
+  background: linear-gradient(135deg, rgba(106,169,255,.16), rgba(255,255,255,.05));
 }
 
-.title{
-  font-size:22px;
-  font-weight:800;
-  letter-spacing:.2px;
-}
-
-.subtitle{
-  margin-top:6px;
-  font-size:13px;
+.statCard .k{
+  font-size:12px;
   color:var(--muted);
 }
 
-/* Main card */
+.statCard .v{
+  margin-top:6px;
+  font-size:22px;
+  font-weight:900;
+  letter-spacing:.2px;
+}
+
+.statCard small{
+  font-size:12px;
+  color:var(--muted);
+  margin-left:6px;
+}
+
+/* ===== Main card ===== */
 .card{
   border:1px solid var(--line);
   border-radius: var(--radius);
@@ -60,7 +75,7 @@ body{
   letter-spacing:.2px;
 }
 
-/* Modes list */
+/* ===== Modes ===== */
 .modes{
   display:flex;
   flex-direction:column;
@@ -68,7 +83,7 @@ body{
 }
 
 .modeItem{
-  position: relative;              /* IMPORTANT for absolute switch */
+  position: relative;
   display:flex;
   gap:10px;
   align-items:flex-start;
@@ -96,7 +111,7 @@ body{
 }
 
 .modeName{
-  font-weight:800;
+  font-weight:900;
   font-size:15px;
 }
 
@@ -106,22 +121,21 @@ body{
   margin-top:2px;
 }
 
-/* Make room for the switch on the manual item */
 .modeManual{
-  padding-right: 88px;  /* so text doesn't sit under the switch */
+  padding-right: 88px; /* chừa chỗ cho switch */
 }
 
-/* Date & time: FIX overlap, add more spacing */
+/* Schedule: spaced (no overlap) */
 .scheduleRow{
   margin-top: 12px;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;           /* "xa ra tí" */
+  gap: 18px;
 }
 
 @media (max-width: 520px){
   .scheduleRow{
-    grid-template-columns: 1fr;   /* stack on small screens */
+    grid-template-columns: 1fr;
     gap: 12px;
   }
 }
@@ -154,24 +168,19 @@ body{
   border-color: rgba(106,169,255,.65);
 }
 
-/* Buttons / chips */
+/* Button / chip */
 .btn{
   border:1px solid var(--line);
   background:rgba(255,255,255,.06);
   color:var(--text);
   border-radius:14px;
   padding:10px 12px;
-  font-weight:800;
+  font-weight:900;
   cursor:pointer;
 }
 
 .btn:hover{
   border-color: rgba(106,169,255,.55);
-}
-
-.btn.primary{
-  border-color: rgba(106,169,255,.55);
-  background: rgba(106,169,255,.22);
 }
 
 .chip{
@@ -184,7 +193,7 @@ body{
   white-space:nowrap;
 }
 
-/* Bottom row */
+/* ===== Bottom row ===== */
 .footerRow{
   display:grid;
   grid-template-columns: 1fr 1fr;
@@ -205,9 +214,7 @@ body{
   gap:10px;
 }
 
-.miniTitle{
-  font-weight:850;
-}
+.miniTitle{ font-weight:950; }
 
 .hint{
   font-size:12px;
@@ -232,26 +239,22 @@ body{
   height: 34px;
 }
 
-/* hide default checkbox */
 .switch input {
   opacity: 0;
   width: 0;
   height: 0;
 }
 
-/* track */
 .slider {
   position: absolute;
   cursor: pointer;
   inset: 0;
   border-radius: 34px;
-  background: rgba(255,255,255,.10);          /* OFF track */
+  background: rgba(255,255,255,.10);
   border: 1px solid rgba(255,255,255,.18);
-  -webkit-transition: .25s;
   transition: .25s;
 }
 
-/* knob */
 .slider::before {
   position: absolute;
   content: "";
@@ -261,26 +264,22 @@ body{
   bottom: 4px;
   border-radius: 50%;
   background: rgba(255,255,255,.92);
-  -webkit-transition: .25s;
   transition: .25s;
 }
 
-/* OFF/ON label */
 .slider::after{
   position: absolute;
   content: "off";
   right: 8px;
   bottom: 8px;
-  font-weight: 800;
+  font-weight: 900;
   font-size: 12px;
   color: rgba(232,236,255,.70);
-  -webkit-transition: .25s;
   transition: .25s;
 }
 
-/* ON state */
 .switch input:checked + .slider {
-  background: rgba(106,169,255,.22);          /* ON track */
+  background: rgba(106,169,255,.22);
   border-color: rgba(106,169,255,.55);
   box-shadow: 0 0 0 3px rgba(106,169,255,.12);
 }
@@ -293,11 +292,5 @@ body{
 
 .switch input:checked + .slider::before {
   transform: translateX(26px);
-  background: var(--accent);                  /* ON knob */
-}
-
-/* focus (keyboard) */
-.switch input:focus-visible + .slider {
-  outline: 2px solid rgba(106,169,255,.75);
-  outline-offset: 3px;
+  background: var(--accent);
 }

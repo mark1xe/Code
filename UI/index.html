@@ -3,37 +3,55 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Smart Irrigation UI</title>
+  <title>Irrigation Dashboard</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 
 <body>
   <div class="wrap">
-    <!-- Top: Project title -->
-    <header class="header">
-      <div class="title">Tên đề tài</div>
-      <div class="subtitle">Web App điều khiển tưới</div>
+
+    <!-- Top: 2x2 status (no project title) -->
+    <header class="topStats">
+      <div class="statCard">
+        <div class="k">Độ ẩm đất</div>
+        <div class="v"><span id="soilStat">--</span><small>%</small></div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Lượng nước</div>
+        <div class="v"><span id="volumeStat">--</span><small>ml</small></div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Ngưỡng</div>
+        <div class="v"><span id="thresholdStat">--</span><small>%</small></div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Chế độ</div>
+        <div class="v"><span id="modeStat">--</span></div>
+      </div>
     </header>
 
-    <!-- Middle: 3 modes -->
+    <!-- Modes -->
     <main class="card">
       <h2>Chế độ</h2>
 
       <section class="modes">
-        <!-- Mode 1: Manual (Switch “Tưới ngay”) -->
+        <!-- Mode 1: Manual + switch -->
         <label class="modeItem modeManual">
-          <input type="radio" name="mode" checked />
+          <input id="mode_manual" type="radio" name="mode" />
           <div class="modeMain">
             <div class="modeTop">
               <div>
-                <div class="modeName">Bơm</div>
-                <div class="modeDesc">Bật/tắt để tưới ngay lập tức</div>
+                <div class="modeName">Bơm (Tưới ngay)</div>
+                <div class="modeDesc">Bật/tắt bơm ngay lập tức</div>
               </div>
             </div>
 
-            <!-- Switch (your style) -->
+            <!-- Switch -->
             <label class="switch" aria-label="Tuoi ngay">
-              <input type="checkbox" />
+              <input id="manual_switch" type="checkbox" />
               <span class="slider round"></span>
             </label>
           </div>
@@ -41,7 +59,7 @@
 
         <!-- Mode 2: Auto -->
         <label class="modeItem">
-          <input type="radio" name="mode" />
+          <input id="mode_auto" type="radio" name="mode" />
           <div class="modeMain">
             <div class="modeTop">
               <div>
@@ -55,25 +73,24 @@
 
         <!-- Mode 3: Schedule -->
         <label class="modeItem">
-          <input type="radio" name="mode" />
+          <input id="mode_schedule" type="radio" name="mode" />
           <div class="modeMain">
             <div class="modeTop">
               <div>
                 <div class="modeName">Lịch hẹn</div>
-                <div class="modeDesc">Đặt lịch tưới theo ngày &amp; thời gian thực</div>
+                <div class="modeDesc">Đặt lịch theo ngày &amp; giờ thực</div>
               </div>
               <span class="chip">⏱</span>
             </div>
 
-            <!-- Date & time: spaced out (no overlap) -->
             <div class="scheduleRow">
               <div class="field">
                 <label>Ngày</label>
-                <input type="date" />
+                <input id="schedule_date" type="date" />
               </div>
               <div class="field">
                 <label>Giờ</label>
-                <input type="time" />
+                <input id="schedule_time" type="time" />
               </div>
             </div>
           </div>
@@ -81,32 +98,38 @@
       </section>
     </main>
 
-    <!-- Bottom: threshold + pump time -->
+    <!-- Settings -->
     <section class="footerRow">
       <div class="miniCard">
         <div class="miniTitle">Điều chỉnh ngưỡng</div>
-        <div class="hint">Ngưỡng độ ẩm (%) để kích hoạt tưới tự động.</div>
+        <div class="hint">Ngưỡng độ ẩm (%) để tưới tự động.</div>
 
         <div class="field">
           <label>Ngưỡng độ ẩm (%)</label>
-          <input type="range" min="0" max="100" value="40" />
+          <input id="threshold_slider" type="range" min="0" max="100" value="40" />
         </div>
 
-        <div class="valueText">Giá trị: <strong>40%</strong></div>
+        <div class="valueText">Giá trị: <strong id="threshold_display">40%</strong></div>
       </div>
 
       <div class="miniCard">
         <div class="miniTitle">Điều chỉnh TG bơm</div>
-        <div class="hint">Thời gian bơm chạy (giây) khi tưới.</div>
+        <div class="hint">Thời gian bơm chạy (giây) khi tưới AUTO/LỊCH.</div>
 
         <div class="field">
           <label>Thời gian (giây)</label>
-          <input type="number" min="1" max="999" value="10" />
+          <input id="pump_seconds" type="number" min="1" max="999" value="10" />
         </div>
 
-        <button class="btn" type="button">LƯU</button>
+        <button id="save_settings" class="btn" type="button">LƯU</button>
       </div>
     </section>
+
   </div>
+
+  <!-- Firebase v8 (same style as your sample JS) -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <script src="control.js"></script>
 </body>
 </html>
