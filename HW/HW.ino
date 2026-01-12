@@ -1,31 +1,3 @@
-/*
-  COMBINED: Pump + Button + Soil Moisture + Water Volume + Warn LED + OLED SH1106 + WebServer
-
-  Pins:
-    Relay IN     -> GPIO27
-    Button       -> GPIO32 (INPUT_PULLUP, button to GND)
-    Pump LED     -> GPIO16
-
-    HC-SR04:
-      VCC  -> 5V
-      GND  -> GND
-      TRIG -> GPIO5
-      ECHO -> GPIO18
-
-    Warn LED     -> GPIO17
-
-    Soil sensor (Capacitive v1.2):
-      VCC  -> 5V
-      GND  -> GND
-      AO   -> GPIO34 (ADC1)
-
-    OLED SH1106 I2C:
-      SDA -> GPIO21
-      SCL -> GPIO22
-      VCC -> 5V
-      GND -> GND
-*/
-
 #include <WiFi.h>
 #include <FirebaseESP32.h>
 #include <Wire.h>
@@ -36,94 +8,98 @@
 #include "freertos/semphr.h"
 #include "time.h"
 
-// ===== WiFi/FireBase Define ====
-#define WIFI_SSID "Thanh Thuy"
-#define WIFI_PASSWORD "thanhthuy"
-
+// WiFi / Firebase
+#define WIFI_SSID "minhphuong"
+#define WIFI_PASSWORD "01010000"
 #define FIREBASE_HOST "https://project2-cd9c9-default-rtdb.firebaseio.com/"
-#define FIREBASE_AUTH "tsnWspwpI5U5nuM1H5FfVbFvBfJgS3ASCravKsg53y9"  
+#define FIREBASE_AUTH "tsnWspwpI5U5nuM1H5FfVbFJgS3ASCravKsg53y9"
 
 FirebaseData firebaseData;
 FirebaseAuth auth;
 FirebaseConfig config;
 String path = "/Var";
 
-// --- Serial mutex ---
+// Serial mutex
 SemaphoreHandle_t serialMutex = nullptr;
-static inline void SerialLock() { if (serialMutex) xSemaphoreTake(serialMutex, portMAX_DELAY); }
+static inline void SerialLock()   { if (serialMutex) xSemaphoreTake(serialMutex, portMAX_DELAY); }
 static inline void SerialUnlock() { if (serialMutex) xSemaphoreGive(serialMutex); }
 
-// ===== Pump + Button =====
-#define RELAY_PIN   27
-#define BUTTON_PIN  32
-#define LED_PIN     16
+// Pins
+#define RELAY_PIN     27
+#define BUTTON_PIN_1  32   // Pump toggle (MANUAL only)
+#define BUTTON_PIN_2  33   // Mode cycle
+#define LED_PIN       16
 
-volatile bool relayState = false;     // pump OFF at start
-bool lastButtonState = HIGH;          // INPUT_PULLUP idle = HIGH
-bool buttonState = HIGH;
+#define SOIL_PIN      34
 
-unsigned long lastDebounceTime = 0;
-unsigned long debounceDelay = 50;
-
-// ===== Soil =====
-#define SOIL_PIN 34
-const int samples = 20;
-const int sampleDelayMs = 10;
-
-int rawDry = 2650;
-int rawWet = 1150;
-volatile int soilPercent = 0;
-
-// ===== Water Volume + Warn LED =====
 #define TRIG_PIN      5
 #define ECHO_PIN      18
 #define WARN_LED_PIN  17
 
-#define SOUND_SPEED   0.034
-#define CUP_HEIGHT    14.0
-#define MAX_H         11.0
+// Pump state
+volatile bool relayState = false;
 
-volatile bool  lowWater = false;       // true when volume < 200
+// Button 1 debounce
+bool lastButtonState = HIGH;
+bool buttonState = HIGH;
+unsigned long lastDebounceTime = 0;
+unsigned long debounceDelay = 50;
+
+// Button 2 debounce
+bool lastModeBtnState = HIGH;
+bool modeBtnState = HIGH;
+unsigned long lastModeDebounceTime = 0;
+unsigned long modeDebounceDelay = 50;
+
+// Soil
+const int samples = 20;
+const int sampleDelayMs = 10;
+int rawDry = 2650;
+int rawWet = 1150;
+volatile int soilPercent = 0;
+
+// Volume / low water
+#define SOUND_SPEED 0.034
+#define CUP_HEIGHT  14.0
+#define MAX_H       11.0
+
+volatile bool  lowWater = false;     // volume < 200
 volatile float waterVolumeMl = 0.0;
 
-// ===== OLED =====
+// OLED
 Adafruit_SH1106G display(128, 64, &Wire, -1);
 
-// ===== Firebase control vars =====
-// Mode: 0=MANUAL, 1=AUTO, 2=SCHEDULE
-volatile int fbMode = 0;
+// Firebase vars
+volatile int fbMode = 0;          // 0=MANUAL, 1=AUTO, 2=SCHEDULE
+volatile int fbThreshold = 40;    // AUTO only
+volatile int fbPumpSeconds = 10;  // AUTO + SCHEDULE
+volatile int fbManualSwitch = 0;  // MANUAL ON/OFF
 
-// Threshold: apply to AUTO only
-volatile int fbThreshold = 40;
+String fbSchDate = "";            // YYYY-MM-DD
+String fbSchTime = "";            // HH:MM
 
-// PumpSeconds: apply to AUTO + SCHEDULE only
-volatile int fbPumpSeconds = 10;
-
-// ManualSwitch: use in MANUAL mode as ON/OFF state
-volatile int fbManualSwitch = 0;
-
-String fbSchDate = "";   // YYYY-MM-DD
-String fbSchTime = "";   // HH:MM
-
-// ===== Timer for mode 2 & 3 =====
+// Timed pump
 bool pumpTimedRunning = false;
 uint32_t pumpStopAtMs = 0;
 
-// ===== AUTO repeat control (AUTO = fbMode 1) =====
-const uint32_t AUTO_COOLDOWN_MS = 30000;   // nghỉ 30s giữa các lần tưới auto
-uint32_t autoNextAllowedMs = 0;            // thời điểm được phép tưới auto lần tiếp theo
+// AUTO cooldown
+const uint32_t AUTO_COOLDOWN_MS = 30000;
+uint32_t autoNextAllowedMs = 0;
 
-// Track manual switch changes (avoid web overriding physical toggle)
+// Manual apply tracking
 int lastManualSwitchApplied = -1;
 
-// Prevent schedule re-trigger
+// Schedule anti-repeat
 String lastScheduleKey = "";
 
-// ===== NEW: ManualSwitch sync from physical button -> Firebase (2-way sync) =====
-volatile bool manualSwitchDirty = false;   // when true, firebaseTask must push ManualSwitch
-volatile int  manualSwitchPending = 0;     // value to push (0/1)
+// 2-way sync flags
+volatile bool manualSwitchDirty = false;
+volatile int  manualSwitchPending = 0;
 
-// ===== Task prototypes =====
+volatile bool modeDirty = false;
+volatile int  modePending = 0;
+
+// Tasks
 void waterTask(void *pvParameters);
 void warnLedTask(void *pvParameters);
 void soilTask(void *pvParameters);
@@ -132,7 +108,7 @@ void firebaseTask(void *pvParameters);
 void controlTask(void *pvParameters);
 void serialTask(void *pvParameters);
 
-// ===== Helpers =====
+// Helpers
 int readSoilRawAvg() {
   long sum = 0;
   for (int i = 0; i < samples; i++) {
@@ -159,7 +135,7 @@ static inline const char* modeTextFull(int m) {
 void applyRelay(bool on) {
   relayState = on;
   digitalWrite(RELAY_PIN, relayState ? HIGH : LOW);
-  digitalWrite(LED_PIN, relayState ? HIGH : LOW);
+  digitalWrite(LED_PIN,  relayState ? HIGH : LOW);
 }
 
 void startTimedPump(int sec) {
@@ -175,8 +151,7 @@ void stopTimedPump() {
 }
 
 void setupTimeNTP() {
-  // GMT+7
-  configTime(7 * 3600, 0, "pool.ntp.org", "time.nist.gov");
+  configTime(7 * 3600, 0, "pool.ntp.org", "time.nist.gov"); // GMT+7
 }
 
 String todayDate() {
@@ -203,7 +178,9 @@ void setup() {
 
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(LED_PIN, OUTPUT);
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  pinMode(BUTTON_PIN_1, INPUT_PULLUP);
+  pinMode(BUTTON_PIN_2, INPUT_PULLUP);
+
   applyRelay(false);
 
   pinMode(TRIG_PIN, OUTPUT);
@@ -220,7 +197,7 @@ void setup() {
     while (1) delay(10);
   }
 
-  // ===== WiFi connect =====
+  // WiFi
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
@@ -230,70 +207,81 @@ void setup() {
 
   setupTimeNTP();
 
-  // ===== Firebase connect =====
+  // Firebase
   config.host = FIREBASE_HOST;
   config.signer.tokens.legacy_token = FIREBASE_AUTH;
-
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
 
   // Tasks
-  xTaskCreate(waterTask,    "Water Task",    3000, NULL, 1, NULL);
-  xTaskCreate(warnLedTask,  "Warn LED Task", 1000, NULL, 1, NULL);
-  xTaskCreate(soilTask,     "Soil Task",     2500, NULL, 1, NULL);
-  xTaskCreate(displayTask,  "OLED Task",     2500, NULL, 1, NULL);
-
-  xTaskCreate(firebaseTask, "Firebase Task", 8192, NULL, 1, NULL);
-  xTaskCreate(controlTask,  "Control Task",  4096, NULL, 1, NULL);
-  xTaskCreate(serialTask,   "Serial Task",   3072, NULL, 1, NULL);
+  xTaskCreate(waterTask,    "Water",    3000, NULL, 1, NULL);
+  xTaskCreate(warnLedTask,  "WarnLED",  1000, NULL, 1, NULL);
+  xTaskCreate(soilTask,     "Soil",     2500, NULL, 1, NULL);
+  xTaskCreate(displayTask,  "OLED",     2500, NULL, 1, NULL);
+  xTaskCreate(firebaseTask, "Firebase", 8192, NULL, 1, NULL);
+  xTaskCreate(controlTask,  "Control",  4096, NULL, 1, NULL);
+  xTaskCreate(serialTask,   "Serial",   3072, NULL, 1, NULL);
 }
 
 void loop() {
-  // Physical button works ONLY in MANUAL mode (fbMode==0) and in parallel with web.
-  if (fbMode != 0) {
-    lastButtonState = digitalRead(BUTTON_PIN);
-    return;
-  }
+  // Mode button: cycle 0->1->2->0 on RELEASE
+  bool modeReading = digitalRead(BUTTON_PIN_2);
+  if (modeReading != lastModeBtnState) lastModeDebounceTime = millis();
 
-  // Low water blocks pumping
-  if (lowWater) {
-    lastButtonState = digitalRead(BUTTON_PIN);
-    return;
-  }
-
-  bool reading = digitalRead(BUTTON_PIN);
-
-  if (reading != lastButtonState) lastDebounceTime = millis();
-
-  if (millis() - lastDebounceTime > debounceDelay) {
-    if (reading != buttonState) {
-      buttonState = reading;
-
-      // Toggle on RELEASE (HIGH)
-      if (buttonState == HIGH) {
-        bool newState = !relayState;
-        applyRelay(newState);
-
-        // Update local ManualSwitch immediately
-        fbManualSwitch = newState ? 1 : 0;
-
-        // NEW: mark to push to Firebase in firebaseTask (avoid multi-thread Firebase calls)
-        manualSwitchPending = fbManualSwitch;
-        manualSwitchDirty = true;
+  if (millis() - lastModeDebounceTime > modeDebounceDelay) {
+    if (modeReading != modeBtnState) {
+      modeBtnState = modeReading;
+      if (modeBtnState == HIGH) {
+        int newMode = (fbMode + 1) % 3;
+        fbMode = newMode;
+        modePending = newMode;
+        modeDirty = true;
 
         SerialLock();
         Serial.println("----");
-        Serial.print("Physical button -> ManualSwitch pending = ");
-        Serial.println(manualSwitchPending);
+        Serial.print("Mode pending = ");
+        Serial.println(modeTextFull(newMode));
         SerialUnlock();
       }
     }
   }
+  lastModeBtnState = modeReading;
 
-  lastButtonState = reading;
+  // Pump button: MANUAL only + not lowWater, toggle on RELEASE
+  if (fbMode == 0 && !lowWater) {
+    bool reading = digitalRead(BUTTON_PIN_1);
+
+    if (reading != lastButtonState) lastDebounceTime = millis();
+
+    if (millis() - lastDebounceTime > debounceDelay) {
+      if (reading != buttonState) {
+        buttonState = reading;
+        if (buttonState == HIGH) {
+          bool newState = !relayState;
+          applyRelay(newState);
+
+          fbManualSwitch = newState ? 1 : 0;
+          manualSwitchPending = fbManualSwitch;
+          manualSwitchDirty = true;
+
+          SerialLock();
+          Serial.println("----");
+          Serial.print("ManualSwitch pending = ");
+          Serial.println(manualSwitchPending);
+          SerialUnlock();
+        }
+      }
+    }
+    lastButtonState = reading;
+  } else {
+    // prevent ghost trigger when returning to MANUAL
+    bool r = digitalRead(BUTTON_PIN_1);
+    lastButtonState = r;
+    buttonState = r;
+  }
 }
 
-// ===== Water Task =====
+// Water (volume + lowWater)
 void waterTask(void *pvParameters) {
   float volumeMax = (1.0 / 3.0) * PI * MAX_H *
                     (sq(3.0) + 3.0 * 5.5 + sq(5.5));
@@ -324,15 +312,13 @@ void waterTask(void *pvParameters) {
     volume = volume * (800.0 / volumeMax);
 
     waterVolumeMl = volume;
-
-    // KEEP ORIGINAL LOW WATER LOGIC
     lowWater = (volume < 200);
 
     vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
-// ===== Warn LED Task =====
+// Warn LED
 void warnLedTask(void *pvParameters) {
   while (1) {
     if (lowWater) {
@@ -347,7 +333,7 @@ void warnLedTask(void *pvParameters) {
   }
 }
 
-// ===== Soil Task =====
+// Soil (%)
 void soilTask(void *pvParameters) {
   while (1) {
     int raw = readSoilRawAvg();
@@ -359,12 +345,13 @@ void soilTask(void *pvParameters) {
   }
 }
 
-// ===== OLED Task =====
+// OLED
 void displayTask(void *pvParameters) {
   while (1) {
-    int sp = soilPercent;
-    int th = fbThreshold;
+    int sp   = soilPercent;
+    int th   = fbThreshold;
     int mode = fbMode;
+    int tsec = fbPumpSeconds;      // NEW: show pump time
     float vol = waterVolumeMl;
 
     display.clearDisplay();
@@ -386,23 +373,23 @@ void displayTask(void *pvParameters) {
     display.print((int)vol);
     display.print("ml");
 
-    // Fixed last line
+    // Last line fixed + NEW T:
     display.setTextSize(1);
     display.setCursor(0, 56);
     display.print("Th:");
     display.print(th);
-    display.print("%  M:");
+    display.print("% M:");
     display.print(modeText3(mode));
+    display.print(" T:");
+    display.print(tsec);
+    display.print("s");
 
     display.display();
     vTaskDelay(500 / portTICK_PERIOD_MS);
   }
 }
 
-// ===== Firebase Task =====
-// write Soid/Volume every 5s
-// read control values every 2s
-// NEW: push ManualSwitch if dirty (from physical button)
+// Firebase
 void firebaseTask(void *pvParameters) {
   uint32_t lastWrite = 0;
   uint32_t lastRead  = 0;
@@ -410,26 +397,18 @@ void firebaseTask(void *pvParameters) {
   while (1) {
     if (Firebase.ready()) {
 
-      // NEW: push ManualSwitch from physical button (2-way sync)
       if (manualSwitchDirty) {
         int v = manualSwitchPending;
         if (Firebase.setInt(firebaseData, path + "/ManualSwitch", v)) {
-          manualSwitchDirty = false;     // done
-          // keep fbManualSwitch consistent
+          manualSwitchDirty = false;
           fbManualSwitch = v;
+        }
+      }
 
-          SerialLock();
-          Serial.println("----");
-          Serial.print("Synced to Firebase ManualSwitch = ");
-          Serial.println(v);
-          SerialUnlock();
-        } else {
-          SerialLock();
-          Serial.println("----");
-          Serial.print("Failed sync ManualSwitch: ");
-          Serial.println(firebaseData.errorReason());
-          SerialUnlock();
-          // keep dirty = true => will retry next loop
+      if (modeDirty) {
+        int m = modePending;
+        if (Firebase.setInt(firebaseData, path + "/Mode", m)) {
+          modeDirty = false;
         }
       }
 
@@ -442,29 +421,19 @@ void firebaseTask(void *pvParameters) {
       if (millis() - lastRead >= 2000) {
         lastRead = millis();
 
-        if (Firebase.getInt(firebaseData, path + "/Mode")) {
-          fbMode = firebaseData.intData();
-        }
-        if (Firebase.getInt(firebaseData, path + "/Threshold")) {
-          fbThreshold = firebaseData.intData();
-        }
-        if (Firebase.getInt(firebaseData, path + "/PumpSeconds")) {
-          fbPumpSeconds = firebaseData.intData();
+        if (!modeDirty) {
+          if (Firebase.getInt(firebaseData, path + "/Mode")) fbMode = firebaseData.intData();
         }
 
-        // IMPORTANT: only read ManualSwitch from Firebase when NOT pending local push
+        if (Firebase.getInt(firebaseData, path + "/Threshold")) fbThreshold = firebaseData.intData();
+        if (Firebase.getInt(firebaseData, path + "/PumpSeconds")) fbPumpSeconds = firebaseData.intData();
+
         if (!manualSwitchDirty) {
-          if (Firebase.getInt(firebaseData, path + "/ManualSwitch")) {
-            fbManualSwitch = firebaseData.intData();
-          }
+          if (Firebase.getInt(firebaseData, path + "/ManualSwitch")) fbManualSwitch = firebaseData.intData();
         }
 
-        if (Firebase.getString(firebaseData, path + "/Schedule/Date")) {
-          fbSchDate = firebaseData.stringData();
-        }
-        if (Firebase.getString(firebaseData, path + "/Schedule/Time")) {
-          fbSchTime = firebaseData.stringData();
-        }
+        if (Firebase.getString(firebaseData, path + "/Schedule/Date")) fbSchDate = firebaseData.stringData();
+        if (Firebase.getString(firebaseData, path + "/Schedule/Time")) fbSchTime = firebaseData.stringData();
       }
     }
 
@@ -472,12 +441,11 @@ void firebaseTask(void *pvParameters) {
   }
 }
 
-// ===== Control Task =====
+// Control
 void controlTask(void *pvParameters) {
   while (1) {
     int mode = fbMode;
 
-    // Low water: block everything
     if (lowWater) {
       if (pumpTimedRunning) stopTimedPump();
       if (relayState) applyRelay(false);
@@ -485,25 +453,19 @@ void controlTask(void *pvParameters) {
       if (fbManualSwitch != 0) {
         fbManualSwitch = 0;
         manualSwitchPending = 0;
-        manualSwitchDirty = true; // push OFF to Firebase
+        manualSwitchDirty = true;
       }
 
       vTaskDelay(200 / portTICK_PERIOD_MS);
       continue;
     }
 
-    // Stop timed pump when time reached
     if (pumpTimedRunning && millis() >= pumpStopAtMs) {
       stopTimedPump();
-
-      if (mode == 1) {
-        autoNextAllowedMs = millis() + AUTO_COOLDOWN_MS;
-      }
+      if (mode == 1) autoNextAllowedMs = millis() + AUTO_COOLDOWN_MS;
     }
 
     if (mode == 0) {
-      // MANUAL: web switch direct ON/OFF
-      // Apply ONLY when changed to avoid "web overriding"
       if (fbManualSwitch != lastManualSwitchApplied) {
         lastManualSwitchApplied = fbManualSwitch;
         applyRelay(fbManualSwitch == 1);
@@ -513,8 +475,6 @@ void controlTask(void *pvParameters) {
       autoNextAllowedMs = 0;
     }
     else if (mode == 1) {
-      // AUTO: Threshold decides WHEN to water, PumpSeconds decides HOW LONG.
-      // Stop ALWAYS by time. If still dry, water again after cooldown.
       lastManualSwitchApplied = -1;
 
       int soil = soilPercent;
@@ -529,7 +489,6 @@ void controlTask(void *pvParameters) {
       }
     }
     else if (mode == 2) {
-      // SCHEDULE: timed watering at date/time
       lastManualSwitchApplied = -1;
       autoNextAllowedMs = 0;
 
@@ -553,12 +512,12 @@ void controlTask(void *pvParameters) {
   }
 }
 
-// ===== Serial Task =====
+// Serial (every 5s)
 void serialTask(void *pvParameters) {
   while (1) {
     int soil = soilPercent;
-    int vol = (int)waterVolumeMl;
-    int th = fbThreshold;
+    int vol  = (int)waterVolumeMl;
+    int th   = fbThreshold;
     int mode = fbMode;
 
     SerialLock();
