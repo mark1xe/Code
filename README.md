@@ -1,4 +1,4 @@
-# Smart Irrigation System (ESP32 + Firebase + Web App) — Latest (2 Buttons + 2×KY-040)
+# Smart Irrigation System (ESP32 + Firebase + Web App)
 
 A smart irrigation project using **ESP32**, **capacitive soil moisture sensor**, **HC-SR04 water level/volume**, **relay + pump**, **SH1106 OLED**, and **Firebase Realtime Database**.  
 Control + monitoring via **Firebase Realtime Database** (web ↔ ESP32 **two-way sync**), with **2 physical buttons** and **2 rotary encoders (KY-040)**.
