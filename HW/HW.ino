@@ -8,9 +8,10 @@
 #include "freertos/semphr.h"
 #include "time.h"
 
-// WiFi / Firebase
-#define WIFI_SSID "minhphuong"
+// ===== WiFi / Firebase =====
+#define WIFI_SSID     "minhphuong"
 #define WIFI_PASSWORD "01010000"
+
 #define FIREBASE_HOST "https://project2-cd9c9-default-rtdb.firebaseio.com/"
 #define FIREBASE_AUTH "tsnWspwpI5U5nuM1H5FfVbFJgS3ASCravKsg53y9"
 
@@ -19,66 +20,66 @@ FirebaseAuth auth;
 FirebaseConfig config;
 String path = "/Var";
 
-// Serial mutex
+// ===== Serial mutex =====
 SemaphoreHandle_t serialMutex = nullptr;
 static inline void SerialLock()   { if (serialMutex) xSemaphoreTake(serialMutex, portMAX_DELAY); }
 static inline void SerialUnlock() { if (serialMutex) xSemaphoreGive(serialMutex); }
 
-// Pins
+// ===== Pump + Buttons =====
 #define RELAY_PIN     27
-#define BUTTON_PIN_1  32   // Pump toggle (MANUAL only)
-#define BUTTON_PIN_2  33   // Mode cycle
+#define BUTTON_PIN_1  32   // Pump (manual)
+#define BUTTON_PIN_2  33   // Mode
 #define LED_PIN       16
 
-#define SOIL_PIN      34
-
-#define TRIG_PIN      5
-#define ECHO_PIN      18
-#define WARN_LED_PIN  17
-
-// Pump state
 volatile bool relayState = false;
 
-// Button 1 debounce
+// Debounce button 1
 bool lastButtonState = HIGH;
 bool buttonState = HIGH;
 unsigned long lastDebounceTime = 0;
 unsigned long debounceDelay = 50;
 
-// Button 2 debounce
+// Debounce button 2
 bool lastModeBtnState = HIGH;
 bool modeBtnState = HIGH;
 unsigned long lastModeDebounceTime = 0;
 unsigned long modeDebounceDelay = 50;
 
-// Soil
+// ===== Soil =====
+#define SOIL_PIN 34
 const int samples = 20;
 const int sampleDelayMs = 10;
+
 int rawDry = 2650;
 int rawWet = 1150;
 volatile int soilPercent = 0;
 
-// Volume / low water
-#define SOUND_SPEED 0.034
-#define CUP_HEIGHT  14.0
-#define MAX_H       11.0
+// ===== Water volume + warn LED =====
+#define TRIG_PIN      5
+#define ECHO_PIN      18
+#define WARN_LED_PIN  17
 
-volatile bool  lowWater = false;     // volume < 200
+#define SOUND_SPEED   0.034
+#define CUP_HEIGHT    14.0
+#define MAX_H         11.0
+
+volatile bool  lowWater = false;
 volatile float waterVolumeMl = 0.0;
 
-// OLED
+// ===== OLED =====
 Adafruit_SH1106G display(128, 64, &Wire, -1);
 
-// Firebase vars
-volatile int fbMode = 0;          // 0=MANUAL, 1=AUTO, 2=SCHEDULE
-volatile int fbThreshold = 40;    // AUTO only
-volatile int fbPumpSeconds = 10;  // AUTO + SCHEDULE
-volatile int fbManualSwitch = 0;  // MANUAL ON/OFF
+// ===== Firebase vars =====
+// Mode: 0=MANUAL, 1=AUTO, 2=SCHEDULE
+volatile int fbMode = 0;
+volatile int fbThreshold = 40;     // AUTO only
+volatile int fbPumpSeconds = 10;   // AUTO + SCHEDULE
+volatile int fbManualSwitch = 0;   // MANUAL ON/OFF
 
-String fbSchDate = "";            // YYYY-MM-DD
-String fbSchTime = "";            // HH:MM
+String fbSchDate = "";  // YYYY-MM-DD
+String fbSchTime = "";  // HH:MM
 
-// Timed pump
+// ===== Timed pump =====
 bool pumpTimedRunning = false;
 uint32_t pumpStopAtMs = 0;
 
@@ -86,10 +87,7 @@ uint32_t pumpStopAtMs = 0;
 const uint32_t AUTO_COOLDOWN_MS = 30000;
 uint32_t autoNextAllowedMs = 0;
 
-// Manual apply tracking
 int lastManualSwitchApplied = -1;
-
-// Schedule anti-repeat
 String lastScheduleKey = "";
 
 // 2-way sync flags
@@ -99,7 +97,28 @@ volatile int  manualSwitchPending = 0;
 volatile bool modeDirty = false;
 volatile int  modePending = 0;
 
-// Tasks
+// NEW: encoder -> Firebase flags
+volatile bool thresholdDirty = false;
+volatile int  thresholdPending = 0;
+
+volatile bool pumpSecDirty = false;
+volatile int  pumpSecPending = 0;
+
+// ===== 2x KY-040 =====
+// Encoder #1: Threshold
+#define ENC_TH_CLK 25
+#define ENC_TH_DT  26
+#define ENC_TH_SW  14
+
+// Encoder #2: PumpSeconds
+#define ENC_PS_CLK 19
+#define ENC_PS_DT  23
+#define ENC_PS_SW  13
+
+volatile int encThStep = 1;   // 1 or 5
+volatile int encPsStep = 1;   // 1 or 5
+
+// ===== Tasks =====
 void waterTask(void *pvParameters);
 void warnLedTask(void *pvParameters);
 void soilTask(void *pvParameters);
@@ -107,8 +126,9 @@ void displayTask(void *pvParameters);
 void firebaseTask(void *pvParameters);
 void controlTask(void *pvParameters);
 void serialTask(void *pvParameters);
+void encoderTask(void *pvParameters);
 
-// Helpers
+// ===== Helpers =====
 int readSoilRawAvg() {
   long sum = 0;
   for (int i = 0; i < samples; i++) {
@@ -170,6 +190,17 @@ String nowTimeHM() {
   return String(buf);
 }
 
+// ===== Encoder decode (table) =====
+static inline int8_t encStepFrom(uint8_t prevAB, uint8_t currAB) {
+  static const int8_t table[16] = {
+     0, -1,  1,  0,
+     1,  0,  0, -1,
+    -1,  0,  0,  1,
+     0,  1, -1,  0
+  };
+  return table[(prevAB << 2) | currAB];
+}
+
 void setup() {
   Serial.begin(115200);
   delay(200);
@@ -178,6 +209,7 @@ void setup() {
 
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(LED_PIN, OUTPUT);
+
   pinMode(BUTTON_PIN_1, INPUT_PULLUP);
   pinMode(BUTTON_PIN_2, INPUT_PULLUP);
 
@@ -196,6 +228,15 @@ void setup() {
   if (!display.begin(0x3C, true)) {
     while (1) delay(10);
   }
+
+  // KY-040 pins
+  pinMode(ENC_TH_CLK, INPUT_PULLUP);
+  pinMode(ENC_TH_DT,  INPUT_PULLUP);
+  pinMode(ENC_TH_SW,  INPUT_PULLUP);
+
+  pinMode(ENC_PS_CLK, INPUT_PULLUP);
+  pinMode(ENC_PS_DT,  INPUT_PULLUP);
+  pinMode(ENC_PS_SW,  INPUT_PULLUP);
 
   // WiFi
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -218,14 +259,18 @@ void setup() {
   xTaskCreate(warnLedTask,  "WarnLED",  1000, NULL, 1, NULL);
   xTaskCreate(soilTask,     "Soil",     2500, NULL, 1, NULL);
   xTaskCreate(displayTask,  "OLED",     2500, NULL, 1, NULL);
+
   xTaskCreate(firebaseTask, "Firebase", 8192, NULL, 1, NULL);
   xTaskCreate(controlTask,  "Control",  4096, NULL, 1, NULL);
   xTaskCreate(serialTask,   "Serial",   3072, NULL, 1, NULL);
+
+  xTaskCreate(encoderTask,  "Encoders", 3072, NULL, 2, NULL);
 }
 
 void loop() {
-  // Mode button: cycle 0->1->2->0 on RELEASE
+  // Button 2: Mode
   bool modeReading = digitalRead(BUTTON_PIN_2);
+
   if (modeReading != lastModeBtnState) lastModeDebounceTime = millis();
 
   if (millis() - lastModeDebounceTime > modeDebounceDelay) {
@@ -239,7 +284,7 @@ void loop() {
 
         SerialLock();
         Serial.println("----");
-        Serial.print("Mode pending = ");
+        Serial.print("Mode pending: ");
         Serial.println(modeTextFull(newMode));
         SerialUnlock();
       }
@@ -247,7 +292,7 @@ void loop() {
   }
   lastModeBtnState = modeReading;
 
-  // Pump button: MANUAL only + not lowWater, toggle on RELEASE
+  // Button 1: Pump (manual only)
   if (fbMode == 0 && !lowWater) {
     bool reading = digitalRead(BUTTON_PIN_1);
 
@@ -256,6 +301,7 @@ void loop() {
     if (millis() - lastDebounceTime > debounceDelay) {
       if (reading != buttonState) {
         buttonState = reading;
+
         if (buttonState == HIGH) {
           bool newState = !relayState;
           applyRelay(newState);
@@ -266,22 +312,22 @@ void loop() {
 
           SerialLock();
           Serial.println("----");
-          Serial.print("ManualSwitch pending = ");
+          Serial.print("ManualSwitch pending: ");
           Serial.println(manualSwitchPending);
           SerialUnlock();
         }
       }
     }
+
     lastButtonState = reading;
   } else {
-    // prevent ghost trigger when returning to MANUAL
     bool r = digitalRead(BUTTON_PIN_1);
     lastButtonState = r;
     buttonState = r;
   }
 }
 
-// Water (volume + lowWater)
+// ===== Water =====
 void waterTask(void *pvParameters) {
   float volumeMax = (1.0 / 3.0) * PI * MAX_H *
                     (sq(3.0) + 3.0 * 5.5 + sq(5.5));
@@ -318,7 +364,7 @@ void waterTask(void *pvParameters) {
   }
 }
 
-// Warn LED
+// ===== Warn LED =====
 void warnLedTask(void *pvParameters) {
   while (1) {
     if (lowWater) {
@@ -333,7 +379,7 @@ void warnLedTask(void *pvParameters) {
   }
 }
 
-// Soil (%)
+// ===== Soil =====
 void soilTask(void *pvParameters) {
   while (1) {
     int raw = readSoilRawAvg();
@@ -345,14 +391,20 @@ void soilTask(void *pvParameters) {
   }
 }
 
-// OLED
+// ===== OLED =====
 void displayTask(void *pvParameters) {
   while (1) {
     int sp   = soilPercent;
     int th   = fbThreshold;
     int mode = fbMode;
-    int tsec = fbPumpSeconds;      // NEW: show pump time
-    float vol = waterVolumeMl;
+    int ps   = fbPumpSeconds;
+    int vol  = (int)waterVolumeMl;
+
+    int remain = 0;
+    if (pumpTimedRunning) {
+      uint32_t now = millis();
+      if (pumpStopAtMs > now) remain = (int)((pumpStopAtMs - now) / 1000UL);
+    }
 
     display.clearDisplay();
     display.setTextColor(SH110X_WHITE);
@@ -370,18 +422,17 @@ void displayTask(void *pvParameters) {
     display.print("Water:");
     display.setTextSize(2);
     display.setCursor(54, 24);
-    display.print((int)vol);
+    display.print(vol);
     display.print("ml");
 
-    // Last line fixed + NEW T:
     display.setTextSize(1);
     display.setCursor(0, 56);
     display.print("Th:");
     display.print(th);
-    display.print("% M:");
+    display.print(" M:");
     display.print(modeText3(mode));
     display.print(" T:");
-    display.print(tsec);
+    display.print(pumpTimedRunning ? remain : ps);
     display.print("s");
 
     display.display();
@@ -389,7 +440,7 @@ void displayTask(void *pvParameters) {
   }
 }
 
-// Firebase
+// ===== Firebase =====
 void firebaseTask(void *pvParameters) {
   uint32_t lastWrite = 0;
   uint32_t lastRead  = 0;
@@ -412,6 +463,22 @@ void firebaseTask(void *pvParameters) {
         }
       }
 
+      if (thresholdDirty) {
+        int t = thresholdPending;
+        if (Firebase.setInt(firebaseData, path + "/Threshold", t)) {
+          thresholdDirty = false;
+          fbThreshold = t;
+        }
+      }
+
+      if (pumpSecDirty) {
+        int p = pumpSecPending;
+        if (Firebase.setInt(firebaseData, path + "/PumpSeconds", p)) {
+          pumpSecDirty = false;
+          fbPumpSeconds = p;
+        }
+      }
+
       if (millis() - lastWrite >= 5000) {
         lastWrite = millis();
         Firebase.setInt(firebaseData, path + "/Soid", (int)soilPercent);
@@ -425,8 +492,13 @@ void firebaseTask(void *pvParameters) {
           if (Firebase.getInt(firebaseData, path + "/Mode")) fbMode = firebaseData.intData();
         }
 
-        if (Firebase.getInt(firebaseData, path + "/Threshold")) fbThreshold = firebaseData.intData();
-        if (Firebase.getInt(firebaseData, path + "/PumpSeconds")) fbPumpSeconds = firebaseData.intData();
+        if (!thresholdDirty) {
+          if (Firebase.getInt(firebaseData, path + "/Threshold")) fbThreshold = firebaseData.intData();
+        }
+
+        if (!pumpSecDirty) {
+          if (Firebase.getInt(firebaseData, path + "/PumpSeconds")) fbPumpSeconds = firebaseData.intData();
+        }
 
         if (!manualSwitchDirty) {
           if (Firebase.getInt(firebaseData, path + "/ManualSwitch")) fbManualSwitch = firebaseData.intData();
@@ -441,7 +513,7 @@ void firebaseTask(void *pvParameters) {
   }
 }
 
-// Control
+// ===== Control =====
 void controlTask(void *pvParameters) {
   while (1) {
     int mode = fbMode;
@@ -470,7 +542,6 @@ void controlTask(void *pvParameters) {
         lastManualSwitchApplied = fbManualSwitch;
         applyRelay(fbManualSwitch == 1);
       }
-
       if (pumpTimedRunning) stopTimedPump();
       autoNextAllowedMs = 0;
     }
@@ -512,7 +583,7 @@ void controlTask(void *pvParameters) {
   }
 }
 
-// Serial (every 5s)
+// ===== Serial (4 lines like web) =====
 void serialTask(void *pvParameters) {
   while (1) {
     int soil = soilPercent;
@@ -522,16 +593,119 @@ void serialTask(void *pvParameters) {
 
     SerialLock();
     Serial.println("----");
-    Serial.print("Soid: ");
-    Serial.println(soil);
-    Serial.print("Volume: ");
-    Serial.println(vol);
-    Serial.print("Threshold: ");
-    Serial.println(th);
-    Serial.print("Mode: ");
-    Serial.println(modeTextFull(mode));
+    Serial.print("Soid: ");      Serial.println(soil);
+    Serial.print("Volume: ");    Serial.println(vol);
+    Serial.print("Threshold: "); Serial.println(th);
+    Serial.print("Mode: ");      Serial.println(modeTextFull(mode));
     SerialUnlock();
 
     vTaskDelay(5000 / portTICK_PERIOD_MS);
+  }
+}
+
+// ===== Encoders (2x KY-040) =====
+void encoderTask(void *pvParameters) {
+  // init AB
+  uint8_t thPrev = (digitalRead(ENC_TH_CLK) << 1) | digitalRead(ENC_TH_DT);
+  uint8_t psPrev = (digitalRead(ENC_PS_CLK) << 1) | digitalRead(ENC_PS_DT);
+
+  int thAccum = 0;
+  int psAccum = 0;
+
+  // SW debounce
+  bool thSwLast = HIGH, thSwState = HIGH;
+  uint32_t thSwT = 0;
+
+  bool psSwLast = HIGH, psSwState = HIGH;
+  uint32_t psSwT = 0;
+
+  const uint32_t swDeb = 50;
+
+  while (1) {
+    // --- TH encoder ---
+    uint8_t thCurr = (digitalRead(ENC_TH_CLK) << 1) | digitalRead(ENC_TH_DT);
+    int8_t thMove = encStepFrom(thPrev, thCurr);
+    if (thMove != 0) {
+      thAccum += thMove;
+      if (thAccum >= 4) {
+        thAccum = 0;
+        int step = encThStep;
+        int newTh = fbThreshold + step;
+        if (newTh > 100) newTh = 100;
+        if (newTh != fbThreshold) {
+          fbThreshold = newTh;
+          thresholdPending = newTh;
+          thresholdDirty = true;
+        }
+      } else if (thAccum <= -4) {
+        thAccum = 0;
+        int step = encThStep;
+        int newTh = fbThreshold - step;
+        if (newTh < 0) newTh = 0;
+        if (newTh != fbThreshold) {
+          fbThreshold = newTh;
+          thresholdPending = newTh;
+          thresholdDirty = true;
+        }
+      }
+    }
+    thPrev = thCurr;
+
+    // TH SW: toggle step 1<->5
+    bool thSwRead = digitalRead(ENC_TH_SW);
+    if (thSwRead != thSwLast) thSwT = millis();
+    if (millis() - thSwT > swDeb) {
+      if (thSwRead != thSwState) {
+        thSwState = thSwRead;
+        if (thSwState == LOW) { // press
+          encThStep = (encThStep == 1) ? 5 : 1;
+        }
+      }
+    }
+    thSwLast = thSwRead;
+
+    // --- PS encoder ---
+    uint8_t psCurr = (digitalRead(ENC_PS_CLK) << 1) | digitalRead(ENC_PS_DT);
+    int8_t psMove = encStepFrom(psPrev, psCurr);
+    if (psMove != 0) {
+      psAccum += psMove;
+      if (psAccum >= 4) {
+        psAccum = 0;
+        int step = encPsStep;
+        int newPs = fbPumpSeconds + step;
+        if (newPs > 999) newPs = 999;
+        if (newPs != fbPumpSeconds) {
+          fbPumpSeconds = newPs;
+          pumpSecPending = newPs;
+          pumpSecDirty = true;
+        }
+      } else if (psAccum <= -4) {
+        psAccum = 0;
+        int step = encPsStep;
+        int newPs = fbPumpSeconds - step;
+        if (newPs < 1) newPs = 1;
+        if (newPs != fbPumpSeconds) {
+          fbPumpSeconds = newPs;
+          pumpSecPending = newPs;
+          pumpSecDirty = true;
+        }
+      }
+    }
+    psPrev = psCurr;
+
+    // PS SW: toggle step 1<->5
+    bool psSwRead = digitalRead(ENC_PS_SW);
+    if (psSwRead != psSwLast) psSwT = millis();
+    if (millis() - psSwT > swDeb) {
+      if (psSwRead != psSwState) {
+        psSwState = psSwRead;
+        if (psSwState == LOW) {
+          encPsStep = (encPsStep == 1) ? 5 : 1;
+        }
+      }
+    }
+    psSwLast = psSwRead;
+
+    vTaskDelay(2 / portTICK_PERIOD_MS);
   }
 }
