@@ -55,14 +55,14 @@ Control + monitoring via **Firebase Realtime Database** (web ↔ ESP32 **two-way
 > You can change GPIOs to match your code. Below is a safe/common suggestion (use **ADC-free** pins and avoid strapping pins).
 
 **Encoder #1 (Threshold):**
-- VCC → **3V3**
+- VCC → **5V**
 - GND → GND
 - CLK → GPIO25
 - DT  → GPIO26
 - SW  → (optional) GPIO14
 
 **Encoder #2 (PumpSeconds):**
-- VCC → **3V3**
+- VCC → **5V**
 - GND → GND
 - CLK → GPIO12
 - DT  → GPIO13
