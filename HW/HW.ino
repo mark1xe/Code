@@ -55,8 +55,8 @@ int rawWet = 1150;
 volatile int soilPercent = 0;
 
 // ===== Water volume + warn LED =====
-#define TRIG_PIN      5
-#define ECHO_PIN      18
+#define TRIG_PIN      18
+#define ECHO_PIN      35
 #define WARN_LED_PIN  17
 
 #define SOUND_SPEED   0.034
