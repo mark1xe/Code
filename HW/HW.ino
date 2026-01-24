@@ -60,7 +60,7 @@ volatile int soilPercent = 0;
 // ===== Water volume + warn LED =====
 #define TRIG_PIN      18
 #define ECHO_PIN      35
-#define WARN_LED_PIN  12
+#define WARN_LED_PIN  4
 
 #define SOUND_SPEED   0.034
 #define CUP_HEIGHT    14.0
